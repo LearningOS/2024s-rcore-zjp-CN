@@ -7,7 +7,7 @@ use alloc::sync::Arc;
 
 use crate::{
     config::MAX_SYSCALL_NUM,
-    loader::get_app_data_by_name,
+    fs::{open_file, OpenFlags},
     mm::{translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
         add_task, current_task, current_task_inner, current_user_token, exit_current_and_run_next,
@@ -52,16 +52,14 @@ pub struct TaskInfo {
     time: usize,
 }
 
-/// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
 
-/// current task gives up resources for other tasks
 pub fn sys_yield() -> isize {
-    trace!("kernel:pid[{}] sys_yield", current_task().unwrap().pid.0);
+    //trace!("kernel: sys_yield");
     suspend_current_and_run_next();
     0
 }
@@ -90,9 +88,10 @@ pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(data);
+        task.exec(all_data.as_slice());
         0
     } else {
         -1
@@ -102,11 +101,7 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    trace!(
-        "kernel::pid[{}] sys_waitpid [{}]",
-        current_task().unwrap().pid.0,
-        pid
-    );
+    //trace!("kernel: sys_waitpid");
     let task = current_task().unwrap();
     // find a child process
 
@@ -174,7 +169,7 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     0
 }
 
-// YOUR JOB: Implement mmap.
+/// YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     bitflags! {
         struct Port: usize {
@@ -221,7 +216,7 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     }
 }
 
-// YOUR JOB: Implement munmap.
+/// YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_munmap", current_task().unwrap().pid.0);
     let start_va = VirtAddr::from(start);
@@ -253,9 +248,10 @@ pub fn sys_spawn(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_spawn", current_task().unwrap().pid.0);
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let data = app_inode.read_all();
         let task = current_task().unwrap();
-        spawn(data, task) as isize
+        spawn(&data, task) as isize
     } else {
         -1
     }
