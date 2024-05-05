@@ -1,15 +1,36 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
-    task::{exit_current_and_run_next, suspend_current_and_run_next, TaskStatus},
+    task::{
+        current_task_start_time, exit_current_and_run_next, suspend_current_and_run_next,
+        TaskStatus,
+    },
     timer::get_time_us,
 };
 
+/// Time duration since qemu starts.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TimeVal {
+    /// seconds
     pub sec: usize,
+    /// microseconds
     pub usec: usize,
+}
+
+impl TimeVal {
+    /// Current time
+    pub fn now() -> Self {
+        let us = get_time_us();
+        TimeVal::from_us(us)
+    }
+
+    fn from_us(us: usize) -> Self {
+        TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        }
+    }
 }
 
 /// Task information
@@ -40,18 +61,24 @@ pub fn sys_yield() -> isize {
 /// get time with second and microsecond
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    let us = get_time_us();
     unsafe {
-        *ts = TimeVal {
-            sec: us / 1_000_000,
-            usec: us % 1_000_000,
-        };
+        *ts = TimeVal::now();
     }
     0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info");
-    -1
+    unsafe {
+        let info = ti.as_mut().unwrap();
+        // get_time in user_lib is in ms
+        let (task, time) = current_task_start_time();
+        info.time = time
+            .map(|start| (get_time_us() - start) / 1000)
+            .unwrap_or(0);
+        super::counts::get(task, &mut info.syscall_times);
+        info.status = TaskStatus::Running;
+    }
+    0
 }

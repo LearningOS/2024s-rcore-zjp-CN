@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
+use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
 use lazy_static::*;
 use switch::__switch;
@@ -47,12 +48,29 @@ pub struct TaskManagerInner {
     current_task: usize,
 }
 
+impl TaskManagerInner {
+    fn current_task_id(&self) -> usize {
+        let id = self.current_task;
+        let status = self.tasks[id].task_status;
+        if !matches!(status, TaskStatus::Running) {
+            let iter = &mut self.tasks.iter();
+            let idx = iter.position(|t| matches!(t.task_status, TaskStatus::Running));
+            error!(
+                "[kernel] task {id} is {status:?}, not running. \
+                 The current running one is task {idx:?}."
+            );
+        }
+        id
+    }
+}
+
 lazy_static! {
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
         let num_app = get_num_app();
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
+            time: None,
             task_status: TaskStatus::UnInit,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
@@ -80,6 +98,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.set_time_start();
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -122,6 +141,7 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].set_time_start();
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -132,7 +152,8 @@ impl TaskManager {
             }
             // go back to user mode
         } else {
-            panic!("All applications completed!");
+            println!("All applications completed!");
+            shutdown();
         }
     }
 }
@@ -168,4 +189,23 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// The current running task id and the start time in us.
+/// The return value None happens in one these cases:
+/// * zero apps
+/// * the first task hasn't started yet
+pub fn current_task_start_time() -> (usize, Option<usize>) {
+    let task_manager = &*TASK_MANAGER;
+    if task_manager.num_app == 0 {
+        return (0, None);
+    }
+    let inner = task_manager.inner.exclusive_access();
+    let current = inner.current_task;
+    (current, inner.tasks[current].time)
+}
+
+/// Get the current running task id with extra checking on TaskStatus.
+pub fn current_task_id() -> usize {
+    TASK_MANAGER.inner.exclusive_access().current_task_id()
 }
