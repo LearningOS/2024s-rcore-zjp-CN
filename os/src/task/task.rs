@@ -1,9 +1,10 @@
 //! Types related to task management
 use super::TaskContext;
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
 };
+use crate::timer::get_time_us;
 use crate::trap::{trap_handler, TrapContext};
 
 /// The task control block (TCB) of a task.
@@ -13,6 +14,12 @@ pub struct TaskControlBlock {
 
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
+
+    /// The first time (us) of being scheduled
+    pub time: Option<usize>,
+
+    /// Syscall counts
+    pub syscall_counts: [u32; MAX_SYSCALL_NUM],
 
     /// Application address space
     pub memory_set: MemorySet,
@@ -58,6 +65,8 @@ impl TaskControlBlock {
         let task_control_block = Self {
             task_status,
             task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+            time: None,
+            syscall_counts: [0; MAX_SYSCALL_NUM],
             memory_set,
             trap_cx_ppn,
             base_size: user_sp,
@@ -95,6 +104,21 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+}
+
+/// Info
+impl TaskControlBlock {
+    /// Set the first time the task is running.
+    pub fn set_time_start(&mut self) {
+        if self.time.is_none() {
+            self.time = Some(get_time_us());
+        }
+    }
+
+    /// Increment a syscall by 1.
+    pub fn increment_sys_call(&mut self, id: usize) {
+        self.syscall_counts[id] += 1;
     }
 }
 

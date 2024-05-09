@@ -14,7 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -140,6 +142,7 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].set_time_start();
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -150,7 +153,8 @@ impl TaskManager {
             }
             // go back to user mode
         } else {
-            panic!("All applications completed!");
+            println!("All applications completed!");
+            shutdown();
         }
     }
 }
@@ -201,4 +205,32 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+fn current_task<T>(f: impl FnOnce(&mut TaskControlBlock) -> T) -> Option<T> {
+    let task_manager = &*TASK_MANAGER;
+    if task_manager.num_app == 0 {
+        return None;
+    }
+    let mut inner = task_manager.inner.exclusive_access();
+    let current = inner.current_task;
+    Some(f(&mut inner.tasks[current]))
+}
+
+/// Returns the start time in us.
+/// The return value None happens in one these cases:
+/// * zero apps
+/// * the first task hasn't started yet
+pub fn current_task_start_time() -> Option<usize> {
+    current_task(|task| task.time)?
+}
+
+/// Increment a syscall count on the current running task.
+pub fn current_task_increment_syscall_count(id: usize) {
+    current_task(|task| task.increment_sys_call(id));
+}
+
+/// Get the current running task id.
+pub fn current_task_syscall_count(buf: &mut [u32; MAX_SYSCALL_NUM]) {
+    current_task(|task| buf.copy_from_slice(&task.syscall_counts));
 }

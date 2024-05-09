@@ -3,16 +3,35 @@ use crate::{
     config::MAX_SYSCALL_NUM,
     mm::translated_byte_type_mut,
     task::{
-        change_program_brk, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
+        change_program_brk, current_task_start_time, current_task_syscall_count,
+        current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
+    timer::get_time_us,
 };
 
+/// Time duration since qemu starts.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TimeVal {
+    /// seconds
     pub sec: usize,
+    /// microseconds
     pub usec: usize,
+}
+
+impl TimeVal {
+    /// Current time
+    pub fn now() -> Self {
+        let us = get_time_us();
+        TimeVal::from_us(us)
+    }
+
+    fn from_us(us: usize) -> Self {
+        TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        }
+    }
 }
 
 /// Task information
@@ -43,17 +62,28 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
+    translated_byte_type_mut(current_user_token(), ts, |ts| *ts = TimeVal::now());
     -1
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    translated_byte_type_mut(current_user_token(), ti, |info| {
+        // get_time in user_lib is in ms
+        let time = current_task_start_time();
+        info.time = time
+            .map(|start| (get_time_us() - start) / 1000)
+            .unwrap_or(0);
+
+        current_task_syscall_count(&mut info.syscall_times);
+        info.status = TaskStatus::Running;
+    });
+    0
 }
 
 // YOUR JOB: Implement mmap.
