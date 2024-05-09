@@ -147,6 +147,10 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+    // Root
+    // pub fn root_ppn(&self) -> PhysPageNum {
+    //     self.root_ppn
+    // }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table

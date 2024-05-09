@@ -238,6 +238,15 @@ where
         SimpleRangeIterator::new(self.l, self.r)
     }
 }
+impl<T> Debug for SimpleRange<T>
+where
+    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}..{:?}", self.l, self.r)
+    }
+}
+
 /// iterator for the simple range structure
 pub struct SimpleRangeIterator<T>
 where

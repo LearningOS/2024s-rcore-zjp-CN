@@ -147,6 +147,7 @@ impl MemorySet {
     /// also returns user_sp_base and entry point.
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
+        // info!("root_ppn: {:?}", memory_set.page_table.root_ppn());
         // map trampoline
         memory_set.map_trampoline();
         // map program headers of elf, with U flag
@@ -182,6 +183,10 @@ impl MemorySet {
         }
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
+        // info!(
+        //     "root_ppn: {:?}, max_end_vpn: {max_end_vpn:?}, max_end_va: {max_end_va:?}, ph_count: {ph_count}",
+        //     memory_set.page_table.root_ppn()
+        // );
         let mut user_stack_bottom: usize = max_end_va.into();
         // guard page
         user_stack_bottom += PAGE_SIZE;
@@ -215,6 +220,7 @@ impl MemorySet {
             ),
             None,
         );
+        info!("areas={:#?}", memory_set.areas);
         (
             memory_set,
             user_stack_top,
@@ -264,6 +270,7 @@ impl MemorySet {
     }
 }
 /// map area structure, controls a contiguous piece of virtual memory
+#[derive(Debug)]
 pub struct MapArea {
     vpn_range: VPNRange,
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
