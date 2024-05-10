@@ -220,7 +220,7 @@ impl MemorySet {
             ),
             None,
         );
-        info!("areas={:#?}", memory_set.areas);
+        // info!("areas={:#?}", memory_set.areas);
         (
             memory_set,
             user_stack_top,
@@ -263,6 +263,46 @@ impl MemorySet {
             .find(|area| area.vpn_range.get_start() == start.floor())
         {
             area.append_to(&mut self.page_table, new_end.ceil());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Map a range of virtual pages.
+    pub fn mmap(
+        &mut self,
+        start: VirtPageNum,
+        end: VirtPageNum,
+        permission: MapPermission,
+    ) -> bool {
+        let target = VPNRange::new(start, end);
+        let iter = &mut self.areas.iter();
+        if iter.all(|area| !area.vpn_range.is_overlapped(&target)) {
+            self.push(
+                MapArea {
+                    vpn_range: target,
+                    data_frames: BTreeMap::new(),
+                    map_type: MapType::Framed,
+                    map_perm: permission,
+                },
+                None,
+            );
+            return true;
+        }
+        false
+    }
+
+    /// Unmap a range of virtual pages.
+    pub fn munmap(&mut self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        let iter = &mut self.areas.iter();
+        if let Some(idx) = iter
+            .position(|area| area.vpn_range.get_start() == start && area.vpn_range.get_end() == end)
+        {
+            let mut area = self.areas.remove(idx);
+            for vpn in VPNRange::new(start, end) {
+                area.unmap_one(&mut self.page_table, vpn);
+            }
             true
         } else {
             false

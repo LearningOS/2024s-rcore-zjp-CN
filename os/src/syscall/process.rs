@@ -1,9 +1,9 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
-    mm::translated_byte_type_mut,
+    mm::{translated_byte_type_mut, MapPermission, VirtAddr},
     task::{
-        change_program_brk, current_task_start_time, current_task_syscall_count,
+        change_program_brk, current_task, current_task_start_time, current_task_syscall_count,
         current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
     timer::get_time_us,
@@ -65,7 +65,7 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     translated_byte_type_mut(current_user_token(), ts, |ts| *ts = TimeVal::now());
-    -1
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -87,15 +87,61 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    bitflags! {
+        struct Port: usize {
+            const R = 0b001;
+            const W = 0b010;
+            const X = 0b100;
+        }
+    }
+
+    trace!("kernel: sys_mmap start={start:#x} len={len} port={port:#b}");
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() {
+        trace!("{start_va:?} not aligned");
+        return -1;
+    }
+    let end_va = VirtAddr::from(start + len);
+
+    let mut perm = MapPermission::U;
+    let Some(port) = Port::from_bits(port) else {
+        trace!("port {port:#b} contains bits that do not correspond to a flag");
+        return -1;
+    };
+    if port.is_empty() {
+        trace!("port is invalid zero bits");
+        return -1;
+    }
+    if port.contains(Port::R) {
+        perm |= MapPermission::R;
+    }
+    if port.contains(Port::W) {
+        perm |= MapPermission::W;
+    }
+    if port.contains(Port::X) {
+        perm |= MapPermission::X;
+    }
+
+    match current_task(|task| task.memory_set.mmap(start_va.into(), end_va.ceil(), perm)) {
+        Some(true) => 0,
+        _ => -1,
+    }
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() {
+        trace!("{start_va:?} not aligned");
+        return -1;
+    }
+    let end_va = VirtAddr::from(start + len);
+    match current_task(|task| task.memory_set.munmap(start_va.into(), end_va.ceil())) {
+        Some(true) => 0,
+        _ => -1,
+    }
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

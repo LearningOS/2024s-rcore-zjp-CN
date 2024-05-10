@@ -207,7 +207,10 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
 
-fn current_task<T>(f: impl FnOnce(&mut TaskControlBlock) -> T) -> Option<T> {
+/// Get the current task.
+/// NOTE: there will be panics if the closure incurs trapping via something like
+/// string allocation.
+pub fn current_task<T>(f: impl FnOnce(&mut TaskControlBlock) -> T) -> Option<T> {
     let task_manager = &*TASK_MANAGER;
     if task_manager.num_app == 0 {
         return None;
