@@ -486,5 +486,6 @@ pub fn remap_test() {
         .translate(mid_data.floor())
         .unwrap()
         .executable(),);
+    drop(kernel_space);
     println!("remap_test passed!");
 }

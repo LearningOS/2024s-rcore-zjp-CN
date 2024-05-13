@@ -1,5 +1,5 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::TaskContext;
+use super::{add_task, TaskContext};
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
@@ -247,6 +247,17 @@ impl TaskControlBlock {
             None
         }
     }
+}
+
+/// Spawn a child process.
+pub fn spawn(elf_data: &[u8], parent: Arc<TaskControlBlock>) -> usize {
+    let task = TaskControlBlock::new(elf_data);
+    let pid = task.pid.0;
+    task.inner_exclusive_access().parent = Some(Arc::downgrade(&parent));
+    let task = Arc::new(task);
+    parent.inner_exclusive_access().children.push(task.clone());
+    add_task(task);
+    pid
 }
 
 /// Info
