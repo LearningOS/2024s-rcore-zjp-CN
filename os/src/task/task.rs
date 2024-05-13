@@ -57,6 +57,12 @@ pub struct TaskControlBlockInner {
     /// Syscall counts
     pub syscall_counts: [u32; MAX_SYSCALL_NUM],
 
+    /// Schedule metrics: lower is first
+    pub stride: usize,
+
+    /// A part of pass added to stride before task switches: higher is first
+    pub priority: u16,
+
     /// Application address space
     pub memory_set: MemorySet,
 
@@ -91,6 +97,14 @@ impl TaskControlBlockInner {
     }
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
+    }
+    /// Add stride based on priority
+    pub fn add_stride(&mut self) {
+        const BIG_STRIDE: u16 = u16::MAX;
+        self.stride += (BIG_STRIDE / self.priority) as usize;
+    }
+    pub fn set_priority(&mut self, priority: u16) {
+        self.priority = priority;
     }
 }
 
@@ -127,6 +141,8 @@ impl TaskControlBlock {
                     program_brk: user_sp,
                     time: None,
                     syscall_counts: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -202,6 +218,8 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     time: None,
                     syscall_counts: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
