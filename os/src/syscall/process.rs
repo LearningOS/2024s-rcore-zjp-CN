@@ -1,21 +1,44 @@
 //! Process management syscalls
+use crate::{
+    mm::translated_byte_type_mut,
+    task::{current_task_start_time, current_task_syscall_count},
+};
 use alloc::sync::Arc;
 
 use crate::{
     config::MAX_SYSCALL_NUM,
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
+        add_task, current_task, current_task_inner, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus,
     },
+    timer::get_time_us,
 };
 
+/// Time duration since qemu starts.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TimeVal {
+    /// seconds
     pub sec: usize,
+    /// microseconds
     pub usec: usize,
+}
+
+impl TimeVal {
+    /// Current time
+    pub fn now() -> Self {
+        let us = get_time_us();
+        TimeVal::from_us(us)
+    }
+
+    fn from_us(us: usize) -> Self {
+        TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        }
+    }
 }
 
 /// Task information
@@ -79,7 +102,11 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task().unwrap().pid.0, pid);
+    trace!(
+        "kernel::pid[{}] sys_waitpid [{}]",
+        current_task().unwrap().pid.0,
+        pid
+    );
     let task = current_task().unwrap();
     // find a child process
 
@@ -117,41 +144,97 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    translated_byte_type_mut(current_user_token(), ts, |ts| *ts = TimeVal::now());
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!(
-        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_task_info",
         current_task().unwrap().pid.0
     );
-    -1
+    translated_byte_type_mut(current_user_token(), ti, |info| {
+        // get_time in user_lib is in ms
+        let time = current_task_start_time();
+        info.time = time
+            .map(|start| (get_time_us() - start) / 1000)
+            .unwrap_or(0);
+
+        current_task_syscall_count(&mut info.syscall_times);
+        info.status = TaskStatus::Running;
+    });
+    0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+// YOUR JOB: Implement mmap.
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    bitflags! {
+        struct Port: usize {
+            const R = 0b001;
+            const W = 0b010;
+            const X = 0b100;
+        }
+    }
+
     trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_mmap start={start:#x} len={len} port={port:#b}",
         current_task().unwrap().pid.0
     );
-    -1
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() {
+        trace!("{start_va:?} not aligned");
+        return -1;
+    }
+    let end_va = VirtAddr::from(start + len);
+
+    let mut perm = MapPermission::U;
+    let Some(port) = Port::from_bits(port) else {
+        trace!("port {port:#b} contains bits that do not correspond to a flag");
+        return -1;
+    };
+    if port.is_empty() {
+        trace!("port is invalid zero bits");
+        return -1;
+    }
+    if port.contains(Port::R) {
+        perm |= MapPermission::R;
+    }
+    if port.contains(Port::W) {
+        perm |= MapPermission::W;
+    }
+    if port.contains(Port::X) {
+        perm |= MapPermission::X;
+    }
+
+    if current_task_inner(|task| task.memory_set.mmap(start_va.into(), end_va.ceil(), perm)) {
+        0
+    } else {
+        -1
+    }
 }
 
-/// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel:pid[{}] sys_munmap", current_task().unwrap().pid.0);
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() {
+        trace!("{start_va:?} not aligned");
+        return -1;
+    }
+    let end_va = VirtAddr::from(start + len);
+    if current_task_inner(|task| task.memory_set.munmap(start_va.into(), end_va.ceil())) {
+        0
+    } else {
+        -1
+    }
 }
 
 /// change data segment size

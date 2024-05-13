@@ -21,7 +21,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{config::MAX_SYSCALL_NUM, loader::get_app_data_by_name};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -35,6 +35,8 @@ pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     Processor,
 };
+
+use self::task::TaskControlBlockInner;
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -114,4 +116,29 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Get the current task.
+/// NOTE: there will be panics if the closure incurs trapping via something like
+/// string allocation.
+pub fn current_task_inner<T>(f: impl FnOnce(&mut TaskControlBlockInner) -> T) -> T {
+    f(&mut current_task().unwrap().inner_exclusive_access())
+}
+
+/// Returns the start time in us.
+/// The return value None happens in one these cases:
+/// * zero apps
+/// * the first task hasn't started yet
+pub fn current_task_start_time() -> Option<usize> {
+    current_task_inner(|task| task.time)
+}
+
+/// Increment a syscall count on the current running task.
+pub fn current_task_increment_syscall_count(id: usize) {
+    current_task_inner(|task| task.increment_sys_call(id));
+}
+
+/// Get the current running task id.
+pub fn current_task_syscall_count(buf: &mut [u32; MAX_SYSCALL_NUM]) {
+    current_task_inner(|task| buf.copy_from_slice(&task.syscall_counts));
 }

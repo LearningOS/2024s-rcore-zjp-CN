@@ -183,6 +183,30 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     v
 }
 
+/// Handle potential cross-page pointer type
+pub fn translated_byte_type_mut<T>(token: usize, start_va: *mut T, f: impl FnOnce(&mut T)) {
+    let len = core::mem::size_of::<T>();
+    if len == 0 {
+        return;
+    }
+    let mut buf = translated_byte_buffer(token, start_va as *const u8, len);
+    match &mut *buf {
+        [good] => f(unsafe { good.as_mut_ptr().cast::<T>().as_mut().unwrap() }), // in the same page
+        [] => unreachable!(),
+        v => {
+            let mut ty: Vec<u8> = v.iter().flat_map(|v| v.iter().copied()).collect();
+            f(unsafe { ty.as_mut_ptr().cast::<T>().as_mut().unwrap() });
+            let [mut start, mut end] = [0; 2];
+            for ele in v {
+                let len = ele.len();
+                end += len;
+                ele.copy_from_slice(&ty[start..end]);
+                start += len;
+            }
+        }
+    }
+}
+
 /// Translate&Copy a ptr[u8] array end with `\0` to a `String` Vec through page table
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);

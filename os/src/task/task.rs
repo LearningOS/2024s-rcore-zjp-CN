@@ -1,9 +1,10 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_us;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -49,6 +50,12 @@ pub struct TaskControlBlockInner {
 
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
+
+    /// The first time (us) of being scheduled
+    pub time: Option<usize>,
+
+    /// Syscall counts
+    pub syscall_counts: [u32; MAX_SYSCALL_NUM],
 
     /// Application address space
     pub memory_set: MemorySet,
@@ -118,6 +125,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    time: None,
+                    syscall_counts: [0; MAX_SYSCALL_NUM],
                 })
             },
         };
@@ -191,6 +200,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    time: None,
+                    syscall_counts: [0; MAX_SYSCALL_NUM],
                 })
             },
         });
@@ -235,6 +246,21 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+}
+
+/// Info
+impl TaskControlBlockInner {
+    /// Set the first time the task is running.
+    pub fn set_time_start(&mut self) {
+        if self.time.is_none() {
+            self.time = Some(get_time_us());
+        }
+    }
+
+    /// Increment a syscall by 1.
+    pub fn increment_sys_call(&mut self, id: usize) {
+        self.syscall_counts[id] += 1;
     }
 }
 
