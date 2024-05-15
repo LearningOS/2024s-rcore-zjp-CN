@@ -1,6 +1,7 @@
 //! File trait & inode(dir, file, pipe, stdin, stdout)
 
 mod inode;
+mod pipe;
 mod stdio;
 
 use crate::mm::UserBuffer;
@@ -71,4 +72,5 @@ use self::inode::ROOT_INODE;
 use alloc::sync::Arc;
 use easy_fs::Inode;
 pub use inode::{list_apps, open_file, OSInode, OpenFlags};
+pub use pipe::{make_pipe, Pipe};
 pub use stdio::{Stdin, Stdout};

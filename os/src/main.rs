@@ -24,7 +24,6 @@
 #![no_main]
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
-#![allow(clippy::bad_bit_mask)]
 
 #[macro_use]
 extern crate bitflags;

@@ -1,4 +1,3 @@
-//! Implementation of [`MapArea`] and [`MemorySet`].
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -359,7 +358,6 @@ impl MemorySet {
         }
     }
 }
-
 /// map area structure, controls a contiguous piece of virtual memory
 #[derive(Debug)]
 pub struct MapArea {
@@ -483,7 +481,7 @@ bitflags! {
     }
 }
 
-/// remap test in kernel space
+/// test map function in page table
 #[allow(unused)]
 pub fn remap_test() {
     let mut kernel_space = KERNEL_SPACE.exclusive_access();
