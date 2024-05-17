@@ -29,7 +29,8 @@ impl DeadlockDetect {
 
     /// called when a new thread starts
     pub fn push_thread_id(&mut self, tid: usize) {
-        assert_eq!(self.threads_len(), tid, "skip tid is not supported");
+        let threads_len = self.threads_len();
+        assert_eq!(threads_len, tid, "tid{tid} skips threads_len {threads_len}");
         let resources_len = self.resources_len();
         self.allocation.0.push(Resources(vec![0; resources_len]));
         self.need.0.push(Resources(vec![0; resources_len]));
@@ -74,12 +75,12 @@ impl DeadlockDetect {
                     finish[tid] = true;
                     let mut new_allocation = allocation.to_vec();
                     let mut new_need = need.to_vec();
-                    let mut new_work = *work;
-                    if need[tid] > 0 {
-                        new_allocation[tid] += 1;
-                        new_need[tid] -= 1;
-                        new_work -= 1;
-                    }
+                    let mut new_work = *work + new_allocation[tid];
+                    // if need[tid] > 0 {
+                    //     new_allocation[tid] += 1;
+                    //     new_need[tid] -= 1;
+                    //     new_work -= 1;
+                    // }
                     let mut new_finish = finish.to_vec();
                     if detect_safe(
                         &mut new_work,
@@ -104,8 +105,18 @@ impl DeadlockDetect {
     /// * false for no allocation due to dead lock
     pub fn try_allocate(&mut self, tid: usize, rid: usize) -> bool {
         println!(
-            "\u{1B}[35m[detect] tid={} rid={} available={} allocation={} need={}\u{1B}[0m",
-            tid, rid, self.available[rid], self.allocation[tid][rid], self.need[tid][rid]
+            "\u{1B}[93m[detect] tid={} rid={} available={} allocation={} need={} \
+             all-allocations={:?}\
+             \u{1B}[0m",
+            tid,
+            rid,
+            self.available[rid],
+            self.allocation[tid][rid],
+            self.need[tid][rid],
+            self.allocation
+                .iter()
+                .map(|thread| thread[rid])
+                .collect::<Vec<_>>()
         );
         if !self.is_safe(rid) {
             return false;
@@ -116,6 +127,7 @@ impl DeadlockDetect {
                 self.available[rid] -= 1;
                 self.allocation[tid][rid] += 1;
             } else {
+                error!("[try_allocate] ??? should be detected as deadlock before this line");
                 return false;
             }
         }
