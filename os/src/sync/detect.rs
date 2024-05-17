@@ -75,12 +75,12 @@ impl DeadlockDetect {
                     finish[tid] = true;
                     let mut new_allocation = allocation.to_vec();
                     let mut new_need = need.to_vec();
-                    let mut new_work = *work + new_allocation[tid];
-                    // if need[tid] > 0 {
-                    //     new_allocation[tid] += 1;
-                    //     new_need[tid] -= 1;
-                    //     new_work -= 1;
-                    // }
+                    let mut new_work = *work;
+                    if need[tid] > 0 {
+                        //     new_allocation[tid] += 1;
+                        new_need[tid] -= 1;
+                        //     new_work -= 1;
+                    }
                     let mut new_finish = finish.to_vec();
                     if detect_safe(
                         &mut new_work,
