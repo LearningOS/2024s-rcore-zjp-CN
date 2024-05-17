@@ -181,7 +181,7 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
         .unwrap()
         .tid;
     info!(
-        "kernel:pid[{}] tid[{tid}] sys_semaphore_down",
+        "kernel:pid[{}] tid[{tid}] sem_id[{sem_id}] sys_semaphore_down",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
     );
     let process = current_process();
@@ -277,14 +277,18 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
 pub fn sys_enable_deadlock_detect(enabled: usize) -> isize {
     info!("kernel: sys_enable_deadlock_detect");
-    if enabled == 1 {
-        current_task()
-            .unwrap()
-            .process
-            .upgrade()
-            .unwrap()
-            .inner_exclusive_access()
-            .enable_deadlock_detect();
+    match enabled {
+        1 => {
+            current_task()
+                .unwrap()
+                .process
+                .upgrade()
+                .unwrap()
+                .inner_exclusive_access()
+                .enable_deadlock_detect();
+            0
+        }
+        0 => 0,
+        _ => -1,
     }
-    0
 }

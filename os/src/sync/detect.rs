@@ -70,20 +70,17 @@ impl DeadlockDetect {
             allocation: &[Resources],
             rid: usize,
         ) -> bool {
-            let Some(tid) = finish.iter().position(|f| !*f) else {
-                // all is true => safe => no deadlock
-                return true;
-            };
-            if need[tid][rid] <= *work {
-                finish[tid] = true;
-                let mut new_work = *work + allocation[tid][rid];
-                if detect_safe(&mut new_work, finish, need, allocation, rid) {
-                    return true;
-                } else {
-                    detect_safe(work, finish, need, allocation, rid);
+            for tid in 0..finish.len() {
+                if !finish[tid] && need[tid][rid] <= *work {
+                    finish[tid] = true;
+                    let mut new_work = *work + allocation[tid][rid];
+                    let mut new_finish = finish.to_vec();
+                    if detect_safe(&mut new_work, &mut new_finish, need, allocation, rid) {
+                        return true;
+                    }
                 }
             }
-            finish.iter().all(|f| *f)
+            finish.iter().all(|&f| f)
         }
         let mut work = self.available[rid];
         detect_safe(&mut work, &mut finish, &self.need, &self.allocation, rid)
@@ -93,13 +90,21 @@ impl DeadlockDetect {
     /// * true for successful allocation due to no dead lock
     /// * false for no allocation due to dead lock
     pub fn try_allocate(&mut self, tid: usize, rid: usize) -> bool {
+        println!(
+            "\u{1B}[35m[detect] tid={} rid={} available={} allocation={} need={}\u{1B}[0m",
+            tid, rid, self.available[rid], self.allocation[tid][rid], self.need[tid][rid]
+        );
         if !self.is_safe(rid) {
             return false;
         }
         if self.need[tid][rid] > 0 {
-            self.need[tid][rid] -= 1;
-            self.available[rid] -= 1;
-            self.allocation[tid][rid] += 1;
+            if self.available[rid] > 0 {
+                self.need[tid][rid] -= 1;
+                self.available[rid] -= 1;
+                self.allocation[tid][rid] += 1;
+            } else {
+                return false;
+            }
         }
         true
     }
