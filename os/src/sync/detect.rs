@@ -53,34 +53,47 @@ impl DeadlockDetect {
         self.need[tid][rid] += 1;
     }
 
-    /// detect: true for dead lock
-    pub fn is_deadlock(&mut self, rid: usize) -> bool {
+    /// detect: false for dead lock
+    pub fn is_safe(&mut self, rid: usize) -> bool {
         let resources_len = self.resources_len();
         assert!(
             resources_len > rid,
             "rid{rid} should be less than resources_len {resources_len}"
         );
-        let mut available = self.available[rid];
-        for tid in 0..self.threads_len() {
-            let need = self.need[tid][rid];
-            if need > available {
-                error!("[deadlock] tid{tid} rid{rid}: need {need} but available {available}");
-                // dead lock
+        let threads_len = self.threads_len();
+        let mut finish = vec![false; threads_len];
+
+        fn detect_safe(
+            work: &mut u32,
+            finish: &mut [bool],
+            need: &[Resources],
+            allocation: &[Resources],
+            rid: usize,
+        ) -> bool {
+            let Some(tid) = finish.iter().position(|f| !*f) else {
+                // all is true => safe => no deadlock
                 return true;
+            };
+            if need[tid][rid] <= *work {
+                finish[tid] = true;
+                let mut new_work = *work + allocation[tid][rid];
+                if detect_safe(&mut new_work, finish, need, allocation, rid) {
+                    return true;
+                } else {
+                    detect_safe(work, finish, need, allocation, rid);
+                }
             }
-            available -= need;
-            // allocate
-            // let allocation = self.allocation[tid][rid];
-            // var_name += need;
+            finish.iter().all(|f| *f)
         }
-        false
+        let mut work = self.available[rid];
+        detect_safe(&mut work, &mut finish, &self.need, &self.allocation, rid)
     }
 
     /// try allocating:
     /// * true for successful allocation due to no dead lock
     /// * false for no allocation due to dead lock
     pub fn try_allocate(&mut self, tid: usize, rid: usize) -> bool {
-        if self.is_deadlock(rid) {
+        if !self.is_safe(rid) {
             return false;
         }
         if self.need[tid][rid] > 0 {
