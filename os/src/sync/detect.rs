@@ -75,7 +75,7 @@ impl DeadlockDetect {
                     finish[tid] = true;
                     let mut new_allocation = allocation.to_vec();
                     let mut new_need = need.to_vec();
-                    let mut new_work = *work;
+                    let mut new_work = *work + 1;
                     if need[tid] > 0 {
                         //     new_allocation[tid] += 1;
                         new_need[tid] -= 1;
@@ -121,17 +121,17 @@ impl DeadlockDetect {
         if !self.is_safe(rid) {
             return false;
         }
-        if self.need[tid][rid] > 0 {
-            if self.available[rid] > 0 {
-                self.need[tid][rid] -= 1;
-                self.available[rid] -= 1;
-                self.allocation[tid][rid] += 1;
-            } else {
-                error!("[try_allocate] ??? should be detected as deadlock before this line");
-                return false;
-            }
+        if self.need[tid][rid] > 0 && self.available[rid] > 0 {
+            self.need[tid][rid] -= 1;
+            self.available[rid] -= 1;
+            self.allocation[tid][rid] += 1;
+            return true;
         }
-        true
+        error!(
+            "[try_allocate] need {} or available {} is zero, so no way to allocate one",
+            self.need[tid][rid], self.available[rid]
+        );
+        false
     }
 
     /// a resource is deallocated and back to available
