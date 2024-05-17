@@ -83,9 +83,11 @@ impl DeadlockDetect {
         if self.is_deadlock(rid) {
             return false;
         }
-        let need = core::mem::replace(&mut self.need[tid][rid], 0);
-        self.available[rid] -= need;
-        self.allocation[tid][rid] += need;
+        if self.need[tid][rid] > 0 {
+            self.need[tid][rid] -= 1;
+            self.available[rid] -= 1;
+            self.allocation[tid][rid] += 1;
+        }
         true
     }
 
