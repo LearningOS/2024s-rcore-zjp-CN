@@ -7,7 +7,7 @@ use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{translated_refmut, MemorySet, KERNEL_SPACE};
-use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::sync::{Condvar, DeadlockDetect, Mutex, Semaphore, UPSafeCell};
 use crate::trap::{trap_handler, TrapContext};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -49,6 +49,10 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// detect deadlock in the mutex list
+    pub mutex_detect: Option<DeadlockDetect>,
+    /// detect deadlock in the semaphore list
+    pub semaphore_detect: Option<DeadlockDetect>,
 }
 
 impl ProcessControlBlockInner {
@@ -68,7 +72,14 @@ impl ProcessControlBlockInner {
     }
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
-        self.task_res_allocator.alloc()
+        let tid = self.task_res_allocator.alloc();
+        if let Some(detect) = self.mutex_detect.as_mut() {
+            detect.push_thread_id(tid);
+        }
+        if let Some(detect) = self.semaphore_detect.as_mut() {
+            detect.push_thread_id(tid);
+        }
+        tid
     }
     /// deallocate a task id
     pub fn dealloc_tid(&mut self, tid: usize) {
@@ -81,6 +92,15 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    /// assume: this is only called before any thread and resource start
+    pub fn enable_deadlock_detect(&mut self) {
+        let mut detect = DeadlockDetect::new();
+        detect.push_thread_id(0);
+        self.mutex_detect = Some(detect);
+        let mut detect = DeadlockDetect::new();
+        detect.push_thread_id(0);
+        self.semaphore_detect = Some(detect);
     }
 }
 
@@ -119,6 +139,8 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_detect: None,
+                    semaphore_detect: None,
                 })
             },
         });
@@ -245,6 +267,8 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_detect: None,
+                    semaphore_detect: None,
                 })
             },
         });
