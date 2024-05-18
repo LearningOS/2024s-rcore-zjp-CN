@@ -69,22 +69,25 @@ impl DeadlockDetect {
             need: &[Resources],
             allocation: &[Resources],
         ) -> bool {
-            'step2: loop {
-                let Some(i) = finish.iter().position(|f| !*f) else {
-                    // all is true: safe
+            // i=tid, j=rid
+            for i in 0..finish.len() {
+                if finish[i] {
+                    continue;
+                }
+                for j in 0..work.len() {
+                    if need[i][j] > work[j] {
+                        return false;
+                    }
+                    work[j] += allocation[i][j];
+                }
+                finish[i] = true;
+                let mut new_work = work.to_vec();
+                let mut new_finish = finish.to_vec();
+                if detect_safe(&mut new_work, &mut new_finish, need, allocation) {
                     return true;
                 };
-
-                // i=tid, j=rid
-                for j in 0..work.len() {
-                    if !finish[i] && need[i][j] <= work[j] {
-                        work[j] += allocation[i][j];
-                        finish[i] = true;
-                        continue 'step2;
-                    }
-                }
-                return finish.iter().all(|f| *f);
             }
+            finish.iter().all(|f| *f)
         }
         let mut work = self.available.0.clone();
         let mut finish = vec![false; self.threads_len()];
