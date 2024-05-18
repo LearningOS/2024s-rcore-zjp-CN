@@ -55,49 +55,40 @@ impl DeadlockDetect {
     }
 
     /// detect: false for dead lock
-    pub fn is_safe(&mut self, rid: usize) -> bool {
-        let resources_len = self.resources_len();
-        assert!(
-            resources_len > rid,
-            "rid{rid} should be less than resources_len {resources_len}"
-        );
-        let threads_len = self.threads_len();
-        let mut finish = vec![false; threads_len];
+    pub fn is_safe(&mut self) -> bool {
+        // let resources_len = self.resources_len();
+        // assert!(
+        //     resources_len > rid,
+        //     "rid{rid} should be less than resources_len {resources_len}"
+        // );
 
+        #[allow(clippy::needless_range_loop)]
         fn detect_safe(
-            work: &mut u32,
+            work: &mut [u32],
             finish: &mut [bool],
-            need: &mut [u32],
-            allocation: &mut [u32],
+            need: &[Resources],
+            allocation: &[Resources],
         ) -> bool {
-            for tid in 0..finish.len() {
-                if !finish[tid] && need[tid] <= *work {
-                    finish[tid] = true;
-                    let mut new_allocation = allocation.to_vec();
-                    let mut new_need = need.to_vec();
-                    let mut new_work = *work + 1;
-                    if need[tid] > 0 {
-                        //     new_allocation[tid] += 1;
-                        new_need[tid] -= 1;
-                        //     new_work -= 1;
-                    }
-                    let mut new_finish = finish.to_vec();
-                    if detect_safe(
-                        &mut new_work,
-                        &mut new_finish,
-                        &mut new_need,
-                        &mut new_allocation,
-                    ) {
-                        return true;
+            'step2: loop {
+                let Some(i) = finish.iter().position(|f| !*f) else {
+                    // all is true: safe
+                    return true;
+                };
+
+                // i=tid, j=rid
+                for j in 0..work.len() {
+                    if !finish[i] && need[i][j] <= work[j] {
+                        work[j] += allocation[i][j];
+                        finish[i] = true;
+                        continue 'step2;
                     }
                 }
+                return finish.iter().all(|f| *f);
             }
-            finish.iter().all(|&f| f)
         }
-        let mut work = self.available[rid];
-        let mut need: Vec<_> = self.need.iter().map(|thread| thread[rid]).collect();
-        let mut allocation: Vec<_> = self.allocation.iter().map(|thread| thread[rid]).collect();
-        detect_safe(&mut work, &mut finish, &mut need, &mut allocation)
+        let mut work = self.available.0.clone();
+        let mut finish = vec![false; self.threads_len()];
+        detect_safe(&mut work, &mut finish, &self.need, &self.allocation)
     }
 
     /// try allocating:
@@ -118,7 +109,7 @@ impl DeadlockDetect {
                 .map(|thread| thread[rid])
                 .collect::<Vec<_>>()
         );
-        if !self.is_safe(rid) {
+        if !self.is_safe() {
             return false;
         }
         if self.need[tid][rid] > 0 && self.available[rid] > 0 {
@@ -127,7 +118,7 @@ impl DeadlockDetect {
             self.allocation[tid][rid] += 1;
             return true;
         }
-        error!(
+        warn!(
             "[try_allocate] need {} or available {} is zero, so no way to allocate one",
             self.need[tid][rid], self.available[rid]
         );
