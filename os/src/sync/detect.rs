@@ -70,14 +70,16 @@ impl DeadlockDetect {
             allocation: &[Resources],
         ) -> bool {
             // i=tid, j=rid
-            for i in 0..finish.len() {
+            'next: for i in 0..finish.len() {
                 if finish[i] {
                     continue;
                 }
                 for j in 0..work.len() {
                     if need[i][j] > work[j] {
-                        return false;
+                        continue 'next;
                     }
+                }
+                for j in 0..work.len() {
                     work[j] += allocation[i][j];
                 }
                 finish[i] = true;
@@ -115,17 +117,22 @@ impl DeadlockDetect {
         if !self.is_safe() {
             return false;
         }
-        if self.need[tid][rid] > 0 && self.available[rid] > 0 {
+        if self.need[tid][rid] == 0 {
+            return true;
+        }
+        if self.available[rid] > 0 {
             self.need[tid][rid] -= 1;
             self.available[rid] -= 1;
             self.allocation[tid][rid] += 1;
             return true;
         }
-        warn!(
-            "[try_allocate] need {} or available {} is zero, so no way to allocate one",
-            self.need[tid][rid], self.available[rid]
-        );
-        false
+        warn!("[try_allocate] tid={tid} needs to wait");
+        true
+        // warn!(
+        //     "[try_allocate] need {} is more than available {} is zero, so no way to allocate one",
+        //     self.need[tid][rid], self.available[rid]
+        // );
+        // false
     }
 
     /// a resource is deallocated and back to available

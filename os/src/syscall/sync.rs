@@ -157,7 +157,7 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
         .unwrap()
         .tid;
     info!(
-        "kernel:pid[{}] tid[{tid}] sys_semaphore_up",
+        "kernel:pid[{}] tid[{tid}] sem_id[{sem_id}] sys_semaphore_up",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
     );
     let process = current_process();
