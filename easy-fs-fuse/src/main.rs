@@ -64,17 +64,19 @@ fn easy_fs_pack() -> std::io::Result<()> {
     let apps: Vec<_> = read_dir(src_path)
         .unwrap()
         .into_iter()
-        .map(|dir_entry| {
+        .filter_map(|dir_entry| {
             let mut name_with_ext = dir_entry.unwrap().file_name().into_string().unwrap();
             name_with_ext.drain(name_with_ext.find('.').unwrap()..name_with_ext.len());
-            name_with_ext
+            (!name_with_ext.is_empty()).then_some(name_with_ext)
         })
         .collect();
     for app in apps {
         // load app data from host file system
-        let mut host_file = File::open(format!("{}{}", target_path, app)).unwrap();
+        let f = format!("{}{}", target_path, app);
+        let mut host_file = File::open(&f).unwrap();
         let mut all_data: Vec<u8> = Vec::new();
-        host_file.read_to_end(&mut all_data).unwrap();
+        // println!("read host_file {}", f);
+        host_file.read_to_end(&mut all_data);
         // create a file in easy-fs
         let inode = root_inode.create(app.as_str()).unwrap();
         // write data to easy-fs
